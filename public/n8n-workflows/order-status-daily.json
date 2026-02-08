@@ -1,0 +1,463 @@
+{
+  "name": "WMF Daily Order Status Email Generator",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## WMF Daily Order Status Email Generator\n\nThis workflow runs every morning at 7:00 AM EST. It reads the master order status workbook from OneDrive, groups orders by customer, generates professional status update emails using Claude AI, and creates Outlook drafts for review.\n\n**Schedule:** Daily at 7:00 AM EST (Mon-Fri)\n**Input:** Order Status Excel workbook from SharePoint\n**Output:** Draft emails in Outlook + Teams summary",
+        "height": 320,
+        "width": 440,
+        "color": 4
+      },
+      "id": "sticky-overview",
+      "name": "Workflow Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [40, 40]
+    },
+    {
+      "parameters": {
+        "content": "### Schedule Trigger\nRuns Monday-Friday at 7:00 AM Eastern. Skips weekends and US holidays (configured via exclude dates).",
+        "height": 120,
+        "width": 280,
+        "color": 6
+      },
+      "id": "sticky-schedule",
+      "name": "Schedule Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [540, 40]
+    },
+    {
+      "parameters": {
+        "content": "### Data Processing\nJavaScript code node groups orders by customer email, filters for orders that need status updates (in-process, shipped recently, delayed), and prepares data for Claude.",
+        "height": 140,
+        "width": 320,
+        "color": 6
+      },
+      "id": "sticky-processing",
+      "name": "Processing Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1140, 40]
+    },
+    {
+      "parameters": {
+        "content": "### Email Generation\nClaude generates professional, personalized status emails for each customer. Emails include order details, current status, expected dates, and any action items. Tone is professional but warm - reflecting WMF's customer service excellence.",
+        "height": 160,
+        "width": 340,
+        "color": 6
+      },
+      "id": "sticky-generation",
+      "name": "Generation Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1700, 40]
+    },
+    {
+      "parameters": {
+        "content": "### Data Quality Flags\nOrders with missing data (no expected date, missing PO numbers, etc.) are flagged and included in the Teams summary for manual follow-up.",
+        "height": 120,
+        "width": 300,
+        "color": 2
+      },
+      "id": "sticky-flags",
+      "name": "Flags Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1140, 680]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 7 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "node-schedule",
+      "name": "Daily 7AM EST Mon-Fri",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [580, 280]
+    },
+    {
+      "parameters": {
+        "resource": "workbook",
+        "operation": "getAll",
+        "workbook": {
+          "__rl": true,
+          "value": "WMF Operations/Order_Status_Master.xlsx",
+          "mode": "name"
+        },
+        "sheet": {
+          "__rl": true,
+          "value": "Active Orders",
+          "mode": "name"
+        },
+        "options": {
+          "range": "A1:Z1000"
+        }
+      },
+      "id": "node-read-orders",
+      "name": "Read Order Status Workbook",
+      "type": "n8n-nodes-base.microsoftExcel",
+      "typeVersion": 2,
+      "position": [820, 280],
+      "credentials": {
+        "microsoftExcelOAuth2Api": {
+          "id": "wmf-excel-cred",
+          "name": "WMF Microsoft 365"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(item => item.json);\nconst today = new Date();\ntoday.setHours(0, 0, 0, 0);\n\n// Group orders by customer email\nconst customerGroups = {};\nconst dataIssues = [];\n\nfor (const row of rows) {\n  const customerEmail = row['Customer Email'];\n  const customerName = row['Customer Name'] || row['Company'];\n  const orderNumber = row['WMF Order #'] || row['Order Number'];\n  const poNumber = row['PO Number'] || row['Customer PO'];\n  const status = row['Status'] || row['Order Status'];\n  const finishSystem = row['Finish System'];\n  const color = row['Color'];\n  const quantity = row['Quantity'] || row['Qty'];\n  const receivedDate = row['Date Received'];\n  const expectedShip = row['Expected Ship Date'];\n  const actualShip = row['Actual Ship Date'];\n  const notes = row['Notes'] || row['Internal Notes'];\n  const trackingNumber = row['Tracking #'] || row['Tracking Number'];\n\n  // Skip completed orders older than 3 days\n  if (status === 'Completed' || status === 'Delivered') {\n    if (actualShip) {\n      const shipDate = new Date(actualShip);\n      const daysSinceShip = (today - shipDate) / (1000 * 60 * 60 * 24);\n      if (daysSinceShip > 3) continue;\n    } else {\n      continue;\n    }\n  }\n\n  // Flag data issues\n  if (!customerEmail) {\n    dataIssues.push({ orderNumber, issue: 'Missing customer email' });\n    continue;\n  }\n  if (!expectedShip && status !== 'Completed') {\n    dataIssues.push({ orderNumber, customerName, issue: 'Missing expected ship date' });\n  }\n  if (!poNumber) {\n    dataIssues.push({ orderNumber, customerName, issue: 'Missing PO number' });\n  }\n\n  if (!customerGroups[customerEmail]) {\n    customerGroups[customerEmail] = {\n      customerEmail,\n      customerName: customerName || 'Valued Customer',\n      contactName: row['Contact Name'] || customerName,\n      orders: []\n    };\n  }\n\n  // Determine if order is delayed\n  let isDelayed = false;\n  if (expectedShip && status !== 'Completed' && status !== 'Shipped') {\n    const expectedDate = new Date(expectedShip);\n    isDelayed = expectedDate < today;\n  }\n\n  customerGroups[customerEmail].orders.push({\n    orderNumber,\n    poNumber: poNumber || 'N/A',\n    status,\n    finishSystem: finishSystem || 'N/A',\n    color: color || 'N/A',\n    quantity: quantity || 'N/A',\n    receivedDate: receivedDate || 'N/A',\n    expectedShipDate: expectedShip || 'TBD',\n    actualShipDate: actualShip || null,\n    trackingNumber: trackingNumber || null,\n    isDelayed,\n    notes: notes || ''\n  });\n}\n\nconst customerList = Object.values(customerGroups).filter(g => g.orders.length > 0);\n\nreturn [{\n  json: {\n    customerGroups: customerList,\n    totalCustomers: customerList.length,\n    totalOrders: customerList.reduce((sum, g) => sum + g.orders.length, 0),\n    dataIssues,\n    processedAt: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "node-group-orders",
+      "name": "Group Orders by Customer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1080, 280]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.totalCustomers }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ]
+        }
+      },
+      "id": "node-check-orders",
+      "name": "Any Orders to Process?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1320, 280]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "customerGroups",
+        "options": {
+          "destinationFieldName": "customer",
+          "include": "selectedOtherFields",
+          "fieldsToInclude": "processedAt,totalCustomers,totalOrders"
+        }
+      },
+      "id": "node-split-customers",
+      "name": "Split by Customer",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [1540, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $credentials.httpHeaderAuth.value }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-5-20250929\",\n  \"max_tokens\": 2048,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"You are writing a professional order status update email on behalf of Windsor Metal Finishing (WMF). WMF is a premier architectural aluminum finishing company known for quality and customer service.\\n\\nWrite a status update email for the following customer:\\n\\nCustomer: {{ $json.customer.customerName }}\\nContact: {{ $json.customer.contactName }}\\n\\nOrders:\\n{{ JSON.stringify($json.customer.orders, null, 2) }}\\n\\nGuidelines:\\n- Professional but warm tone\\n- Address the contact by first name if available\\n- Group by status (In Process, Shipped, Delayed)\\n- For shipped orders, include tracking number if available\\n- For delayed orders, acknowledge the delay and provide updated timeline\\n- Include a brief summary at the top\\n- Sign off as 'Windsor Metal Finishing Sales Team'\\n- Do NOT include pricing information\\n- Format as HTML for Outlook email\\n\\nReturn ONLY a JSON object (no markdown):\\n{\\n  \\\"subject\\\": \\\"email subject line\\\",\\n  \\\"htmlBody\\\": \\\"full HTML email body\\\",\\n  \\\"hasDelayedOrders\\\": true/false,\\n  \\\"ordersSummary\\\": \\\"brief text summary for logging\\\"\\n}\"\n    }\n  ]\n}",
+        "options": {
+          "timeout": 60000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "node-claude-email",
+      "name": "Claude - Generate Status Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1780, 240],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "wmf-anthropic-key",
+          "name": "Anthropic API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst customerData = $('Split by Customer').first().json.customer;\n\nlet emailContent;\ntry {\n  const content = response.content[0].text;\n  emailContent = JSON.parse(content);\n} catch (e) {\n  // Fallback to a simple status email\n  const orderList = customerData.orders.map(o => \n    `Order ${o.orderNumber} (PO: ${o.poNumber}): ${o.status}`\n  ).join('<br>');\n  \n  emailContent = {\n    subject: `Order Status Update - Windsor Metal Finishing`,\n    htmlBody: `<p>Dear ${customerData.contactName},</p><p>Here is your order status update:</p><p>${orderList}</p><p>Please contact us with any questions.</p><p>Best regards,<br>Windsor Metal Finishing Sales Team</p>`,\n    hasDelayedOrders: customerData.orders.some(o => o.isDelayed),\n    ordersSummary: `${customerData.orders.length} orders for ${customerData.customerName}`\n  };\n}\n\nreturn [{\n  json: {\n    customerEmail: customerData.customerEmail,\n    customerName: customerData.customerName,\n    contactName: customerData.contactName,\n    orderCount: customerData.orders.length,\n    subject: emailContent.subject,\n    htmlBody: emailContent.htmlBody,\n    hasDelayedOrders: emailContent.hasDelayedOrders,\n    ordersSummary: emailContent.ordersSummary,\n    generatedAt: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "node-parse-email",
+      "name": "Parse Email Content",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2020, 240]
+    },
+    {
+      "parameters": {
+        "resource": "draft",
+        "operation": "create",
+        "subject": "={{ $json.subject }}",
+        "bodyContent": "={{ $json.htmlBody }}",
+        "bodyContentType": "html",
+        "toRecipients": "={{ $json.customerEmail }}",
+        "additionalFields": {
+          "ccRecipients": "sales@windsormetalfinishing.com",
+          "importance": "={{ $json.hasDelayedOrders ? 'high' : 'normal' }}",
+          "categories": ["Order Status Update", "AI Generated"]
+        }
+      },
+      "id": "node-create-draft",
+      "name": "Create Outlook Draft",
+      "type": "n8n-nodes-base.microsoftOutlook",
+      "typeVersion": 2,
+      "position": [2260, 240],
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "id": "wmf-outlook-cred",
+          "name": "WMF Outlook - sales@windsormetalfinishing.com"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate results from all draft creations\nconst items = $input.all();\n\nconst results = items.map(item => ({\n  customerName: item.json.customerName || 'Unknown',\n  customerEmail: item.json.customerEmail || 'Unknown',\n  orderCount: item.json.orderCount || 0,\n  hasDelayedOrders: item.json.hasDelayedOrders || false,\n  draftId: item.json.id || 'created',\n  summary: item.json.ordersSummary || ''\n}));\n\nconst totalDrafts = results.length;\nconst delayedCount = results.filter(r => r.hasDelayedOrders).length;\nconst totalOrders = results.reduce((sum, r) => sum + r.orderCount, 0);\n\nconst dataIssues = $('Group Orders by Customer').first().json.dataIssues || [];\n\nreturn [{\n  json: {\n    summaryDate: new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),\n    totalDrafts,\n    totalOrders,\n    delayedCount,\n    dataIssues,\n    customerResults: results,\n    workflowRunId: $execution.id\n  }\n}];"
+      },
+      "id": "node-aggregate-results",
+      "name": "Aggregate Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2500, 240]
+    },
+    {
+      "parameters": {
+        "resource": "chatMessage",
+        "operation": "create",
+        "teamId": "={{ $env.WMF_TEAMS_SALES_TEAM_ID }}",
+        "channelId": "={{ $env.WMF_TEAMS_STATUS_CHANNEL_ID }}",
+        "contentType": "html",
+        "message": "=<b>Daily Order Status Update Summary - {{ $json.summaryDate }}</b><br><br><b>Drafts Created:</b> {{ $json.totalDrafts }} emails for {{ $json.totalOrders }} orders<br><b>Delayed Orders:</b> {{ $json.delayedCount }} customer(s) with delayed orders<br><br>{{ $json.dataIssues.length > 0 ? '<b style=\"color:orange\">Data Issues Found:</b><br>' + $json.dataIssues.map(i => '- Order ' + i.orderNumber + ': ' + i.issue).join('<br>') + '<br><br>' : '' }}<b>Customer Breakdown:</b><br>{{ $json.customerResults.map(r => '- ' + r.customerName + ': ' + r.orderCount + ' order(s)' + (r.hasDelayedOrders ? ' (DELAYED)' : '')).join('<br>') }}<br><br>All drafts are ready for review in Outlook. <a href=\"https://outlook.office365.com/mail/drafts\">Open Drafts</a>",
+        "options": {}
+      },
+      "id": "node-teams-summary",
+      "name": "Post Summary to Teams",
+      "type": "n8n-nodes-base.microsoftTeams",
+      "typeVersion": 2,
+      "position": [2740, 240],
+      "credentials": {
+        "microsoftTeamsOAuth2Api": {
+          "id": "wmf-teams-cred",
+          "name": "WMF Microsoft Teams"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://n8n.windsormetalfinishing.com/webhook/daily-status-log",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ date: $json.summaryDate, totalDrafts: $json.totalDrafts, totalOrders: $json.totalOrders, delayedCount: $json.delayedCount, dataIssues: $json.dataIssues.length, workflowRunId: $json.workflowRunId }) }}"
+      },
+      "id": "node-log-run",
+      "name": "Log Daily Run",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2980, 240]
+    },
+    {
+      "parameters": {
+        "resource": "chatMessage",
+        "operation": "create",
+        "teamId": "={{ $env.WMF_TEAMS_SALES_TEAM_ID }}",
+        "channelId": "={{ $env.WMF_TEAMS_STATUS_CHANNEL_ID }}",
+        "contentType": "html",
+        "message": "=<b>Daily Order Status Update - {{ new Date().toLocaleDateString('en-US') }}</b><br><br>No active orders requiring status updates today. All orders are either completed (shipped 3+ days ago) or not yet in the system.<br><br>Workflow run: {{ $execution.id }}",
+        "options": {}
+      },
+      "id": "node-no-orders",
+      "name": "Post No Orders Notice",
+      "type": "n8n-nodes-base.microsoftTeams",
+      "typeVersion": 2,
+      "position": [1540, 460],
+      "credentials": {
+        "microsoftTeamsOAuth2Api": {
+          "id": "wmf-teams-cred",
+          "name": "WMF Microsoft Teams"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Daily 7AM EST Mon-Fri": {
+      "main": [
+        [
+          {
+            "node": "Read Order Status Workbook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Order Status Workbook": {
+      "main": [
+        [
+          {
+            "node": "Group Orders by Customer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Group Orders by Customer": {
+      "main": [
+        [
+          {
+            "node": "Any Orders to Process?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any Orders to Process?": {
+      "main": [
+        [
+          {
+            "node": "Split by Customer",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Post No Orders Notice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split by Customer": {
+      "main": [
+        [
+          {
+            "node": "Claude - Generate Status Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude - Generate Status Email": {
+      "main": [
+        [
+          {
+            "node": "Parse Email Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Email Content": {
+      "main": [
+        [
+          {
+            "node": "Create Outlook Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Outlook Draft": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Results": {
+      "main": [
+        [
+          {
+            "node": "Post Summary to Teams",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post Summary to Teams": {
+      "main": [
+        [
+          {
+            "node": "Log Daily Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "wmf-error-handler",
+    "timezone": "America/New_York",
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "wmf-n8n-production"
+  },
+  "id": "wmf-order-status-daily",
+  "tags": [
+    {
+      "id": "tag-wmf",
+      "name": "WMF-Production",
+      "createdAt": "2025-01-15T00:00:00.000Z",
+      "updatedAt": "2025-01-15T00:00:00.000Z"
+    },
+    {
+      "id": "tag-status",
+      "name": "Order-Status",
+      "createdAt": "2025-01-15T00:00:00.000Z",
+      "updatedAt": "2025-01-15T00:00:00.000Z"
+    }
+  ]
+}

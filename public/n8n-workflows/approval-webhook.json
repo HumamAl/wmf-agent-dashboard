@@ -1,0 +1,698 @@
+{
+  "name": "WMF Approval & Action Webhook Handler",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## WMF Approval & Action Webhook Handler\n\nThis workflow receives approval actions from the WMF Review Dashboard and executes the corresponding operations in Microsoft 365.\n\n**Actions Handled:**\n- `approve_and_send` - Send approved draft email immediately\n- `approve_save` - Mark as approved, keep as draft for manual send\n- `request_edits` - Flag for edits, notify via Teams\n- `request_info` - Draft follow-up email to customer requesting clarification\n\n**Input:** Webhook from WMF Dashboard\n**Output:** Action executed + audit log entry",
+        "height": 360,
+        "width": 440,
+        "color": 4
+      },
+      "id": "sticky-overview",
+      "name": "Workflow Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [40, 40]
+    },
+    {
+      "parameters": {
+        "content": "### Webhook Input Schema\nExpected POST body:\n```json\n{\n  \"action\": \"approve_and_send|approve_save|request_edits|request_info\",\n  \"draftId\": \"outlook-message-id\",\n  \"quoteNumber\": \"WMF-Q-...\",\n  \"reviewerEmail\": \"reviewer@wmf.com\",\n  \"reviewerName\": \"John Smith\",\n  \"editNotes\": \"optional edit instructions\",\n  \"infoRequest\": \"optional info needed\",\n  \"customerEmail\": \"customer@example.com\",\n  \"customerName\": \"Customer Name\"\n}\n```",
+        "height": 360,
+        "width": 380,
+        "color": 6
+      },
+      "id": "sticky-schema",
+      "name": "Schema Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [520, 40]
+    },
+    {
+      "parameters": {
+        "content": "### Approve & Send\nMoves the draft email to Sent by calling the Microsoft Graph API send endpoint. The draft is immediately delivered to the customer.",
+        "height": 120,
+        "width": 280,
+        "color": 1
+      },
+      "id": "sticky-send",
+      "name": "Send Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1380, 40]
+    },
+    {
+      "parameters": {
+        "content": "### Request Edits\nPosts edit instructions to Teams channel and updates the draft category in Outlook to 'Needs Edits'. The sales team can then manually revise and re-submit.",
+        "height": 140,
+        "width": 300,
+        "color": 3
+      },
+      "id": "sticky-edits",
+      "name": "Edits Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1380, 380]
+    },
+    {
+      "parameters": {
+        "content": "### Request Info\nDrafts a follow-up email to the customer asking for clarification. Uses Claude to generate a professional information request based on the reviewer's notes.",
+        "height": 140,
+        "width": 300,
+        "color": 3
+      },
+      "id": "sticky-info",
+      "name": "Info Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1380, 620]
+    },
+    {
+      "parameters": {
+        "content": "### Audit Logging\nEvery approval action is logged with timestamp, reviewer, action type, and relevant IDs. This creates an audit trail for compliance and performance tracking.",
+        "height": 120,
+        "width": 300,
+        "color": 5
+      },
+      "id": "sticky-audit",
+      "name": "Audit Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [2200, 40]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "approval-action",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "node-webhook",
+      "name": "Approval Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [580, 480],
+      "webhookId": "wmf-approval-action"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.body.action }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty"
+              }
+            },
+            {
+              "leftValue": "={{ $json.body.reviewerEmail }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "node-validate",
+      "name": "Validate Request",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [800, 480]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "rules": [
+            {
+              "outputIndex": 0,
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.body.action }}",
+                    "rightValue": "approve_and_send",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "outputIndex": 1,
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.body.action }}",
+                    "rightValue": "approve_save",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "outputIndex": 2,
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.body.action }}",
+                    "rightValue": "request_edits",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "outputIndex": 3,
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.body.action }}",
+                    "rightValue": "request_info",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "node-switch-action",
+      "name": "Route by Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [1060, 480]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.microsoft.com/v1.0/me/messages/{{ $json.body.draftId }}/send",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "node-send-draft",
+      "name": "Send Draft via Outlook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1380, 180],
+      "credentials": {
+        "oAuth2Api": {
+          "id": "wmf-graph-cred",
+          "name": "WMF Microsoft Graph API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "chatMessage",
+        "operation": "create",
+        "teamId": "={{ $env.WMF_TEAMS_SALES_TEAM_ID }}",
+        "channelId": "={{ $env.WMF_TEAMS_APPROVAL_CHANNEL_ID }}",
+        "contentType": "html",
+        "message": "=<b>Email Approved & Sent</b><br><br><b>Quote/Reference:</b> {{ $('Approval Webhook').first().json.body.quoteNumber || 'N/A' }}<br><b>Customer:</b> {{ $('Approval Webhook').first().json.body.customerName || 'N/A' }}<br><b>Approved by:</b> {{ $('Approval Webhook').first().json.body.reviewerName }}<br><b>Time:</b> {{ new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }) }} EST",
+        "options": {}
+      },
+      "id": "node-teams-sent",
+      "name": "Notify Email Sent",
+      "type": "n8n-nodes-base.microsoftTeams",
+      "typeVersion": 2,
+      "position": [1640, 180],
+      "credentials": {
+        "microsoftTeamsOAuth2Api": {
+          "id": "wmf-teams-cred",
+          "name": "WMF Microsoft Teams"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "update",
+        "messageId": "={{ $json.body.draftId }}",
+        "updateFields": {
+          "categories": ["Approved - Saved", "AI Generated"],
+          "isRead": false
+        }
+      },
+      "id": "node-mark-approved",
+      "name": "Mark Draft as Approved",
+      "type": "n8n-nodes-base.microsoftOutlook",
+      "typeVersion": 2,
+      "position": [1380, 340],
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "id": "wmf-outlook-cred",
+          "name": "WMF Outlook - sales@windsormetalfinishing.com"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "chatMessage",
+        "operation": "create",
+        "teamId": "={{ $env.WMF_TEAMS_SALES_TEAM_ID }}",
+        "channelId": "={{ $env.WMF_TEAMS_APPROVAL_CHANNEL_ID }}",
+        "contentType": "html",
+        "message": "=<b>Email Approved - Saved as Draft</b><br><br><b>Quote/Reference:</b> {{ $('Approval Webhook').first().json.body.quoteNumber || 'N/A' }}<br><b>Customer:</b> {{ $('Approval Webhook').first().json.body.customerName || 'N/A' }}<br><b>Approved by:</b> {{ $('Approval Webhook').first().json.body.reviewerName }}<br><br>Draft is ready for manual send in Outlook. <a href=\"https://outlook.office365.com/mail/drafts\">Open Drafts</a>",
+        "options": {}
+      },
+      "id": "node-teams-approved",
+      "name": "Notify Draft Approved",
+      "type": "n8n-nodes-base.microsoftTeams",
+      "typeVersion": 2,
+      "position": [1640, 340],
+      "credentials": {
+        "microsoftTeamsOAuth2Api": {
+          "id": "wmf-teams-cred",
+          "name": "WMF Microsoft Teams"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "update",
+        "messageId": "={{ $json.body.draftId }}",
+        "updateFields": {
+          "categories": ["Needs Edits", "AI Generated"],
+          "isRead": false
+        }
+      },
+      "id": "node-mark-edits",
+      "name": "Mark Draft Needs Edits",
+      "type": "n8n-nodes-base.microsoftOutlook",
+      "typeVersion": 2,
+      "position": [1380, 540],
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "id": "wmf-outlook-cred",
+          "name": "WMF Outlook - sales@windsormetalfinishing.com"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "chatMessage",
+        "operation": "create",
+        "teamId": "={{ $env.WMF_TEAMS_SALES_TEAM_ID }}",
+        "channelId": "={{ $env.WMF_TEAMS_APPROVAL_CHANNEL_ID }}",
+        "contentType": "html",
+        "message": "=<b style=\"color:orange\">Edits Requested on Draft</b><br><br><b>Quote/Reference:</b> {{ $('Approval Webhook').first().json.body.quoteNumber || 'N/A' }}<br><b>Customer:</b> {{ $('Approval Webhook').first().json.body.customerName || 'N/A' }}<br><b>Reviewer:</b> {{ $('Approval Webhook').first().json.body.reviewerName }}<br><br><b>Edit Instructions:</b><br>{{ $('Approval Webhook').first().json.body.editNotes || 'No specific instructions provided' }}<br><br>Please review and revise the draft in Outlook, then re-submit for approval. <a href=\"https://outlook.office365.com/mail/drafts\">Open Drafts</a>",
+        "options": {}
+      },
+      "id": "node-teams-edits",
+      "name": "Notify Edits Requested",
+      "type": "n8n-nodes-base.microsoftTeams",
+      "typeVersion": 2,
+      "position": [1640, 540],
+      "credentials": {
+        "microsoftTeamsOAuth2Api": {
+          "id": "wmf-teams-cred",
+          "name": "WMF Microsoft Teams"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $credentials.httpHeaderAuth.value }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-5-20250929\",\n  \"max_tokens\": 1024,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Write a professional follow-up email from Windsor Metal Finishing requesting additional information from a customer.\\n\\nCustomer: {{ $json.body.customerName }}\\nCustomer Email: {{ $json.body.customerEmail }}\\nQuote Reference: {{ $json.body.quoteNumber || 'N/A' }}\\n\\nInformation needed:\\n{{ $json.body.infoRequest }}\\n\\nGuidelines:\\n- Professional, courteous tone\\n- Reference the original inquiry/quote\\n- Be specific about what information is needed\\n- Make it easy for the customer to respond\\n- Sign off as Windsor Metal Finishing Sales Team\\n- Format as HTML\\n\\nReturn ONLY a JSON object (no markdown):\\n{\\n  \\\"subject\\\": \\\"email subject\\\",\\n  \\\"htmlBody\\\": \\\"full HTML body\\\"\\n}\"\n    }\n  ]\n}",
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "node-claude-followup",
+      "name": "Claude - Generate Follow-up",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1380, 760],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "wmf-anthropic-key",
+          "name": "Anthropic API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst requestData = $('Approval Webhook').first().json.body;\n\nlet followUp;\ntry {\n  const content = response.content[0].text;\n  followUp = JSON.parse(content);\n} catch (e) {\n  followUp = {\n    subject: `Follow-up: Additional Information Needed - ${requestData.quoteNumber || 'Your Inquiry'}`,\n    htmlBody: `<p>Dear ${requestData.customerName},</p><p>Thank you for your recent inquiry. We need some additional information to proceed:</p><p>${requestData.infoRequest}</p><p>Please reply to this email with the requested details and we will be happy to assist you.</p><p>Best regards,<br>Windsor Metal Finishing Sales Team</p>`\n  };\n}\n\nreturn [{\n  json: {\n    ...requestData,\n    followUpSubject: followUp.subject,\n    followUpBody: followUp.htmlBody\n  }\n}];"
+      },
+      "id": "node-parse-followup",
+      "name": "Parse Follow-up Content",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1640, 760]
+    },
+    {
+      "parameters": {
+        "resource": "draft",
+        "operation": "create",
+        "subject": "={{ $json.followUpSubject }}",
+        "bodyContent": "={{ $json.followUpBody }}",
+        "bodyContentType": "html",
+        "toRecipients": "={{ $json.customerEmail }}",
+        "additionalFields": {
+          "ccRecipients": "sales@windsormetalfinishing.com",
+          "categories": ["Follow-up", "AI Generated", "Info Request"],
+          "importance": "normal"
+        }
+      },
+      "id": "node-create-followup-draft",
+      "name": "Create Follow-up Draft",
+      "type": "n8n-nodes-base.microsoftOutlook",
+      "typeVersion": 2,
+      "position": [1880, 760],
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "id": "wmf-outlook-cred",
+          "name": "WMF Outlook - sales@windsormetalfinishing.com"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "chatMessage",
+        "operation": "create",
+        "teamId": "={{ $env.WMF_TEAMS_SALES_TEAM_ID }}",
+        "channelId": "={{ $env.WMF_TEAMS_APPROVAL_CHANNEL_ID }}",
+        "contentType": "html",
+        "message": "=<b>Follow-up Draft Created</b><br><br><b>Quote/Reference:</b> {{ $('Approval Webhook').first().json.body.quoteNumber || 'N/A' }}<br><b>Customer:</b> {{ $('Approval Webhook').first().json.body.customerName || 'N/A' }} ({{ $('Approval Webhook').first().json.body.customerEmail }})<br><b>Requested by:</b> {{ $('Approval Webhook').first().json.body.reviewerName }}<br><br><b>Information Requested:</b><br>{{ $('Approval Webhook').first().json.body.infoRequest }}<br><br>A follow-up email draft has been created in Outlook. <a href=\"https://outlook.office365.com/mail/drafts\">Open Drafts</a>",
+        "options": {}
+      },
+      "id": "node-teams-followup",
+      "name": "Notify Follow-up Created",
+      "type": "n8n-nodes-base.microsoftTeams",
+      "typeVersion": 2,
+      "position": [2120, 760],
+      "credentials": {
+        "microsoftTeamsOAuth2Api": {
+          "id": "wmf-teams-cred",
+          "name": "WMF Microsoft Teams"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://n8n.windsormetalfinishing.com/webhook/approval-audit-log",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"timestamp\": \"{{ new Date().toISOString() }}\",\n  \"action\": \"{{ $('Approval Webhook').first().json.body.action }}\",\n  \"quoteNumber\": \"{{ $('Approval Webhook').first().json.body.quoteNumber || 'N/A' }}\",\n  \"draftId\": \"{{ $('Approval Webhook').first().json.body.draftId || 'N/A' }}\",\n  \"reviewerEmail\": \"{{ $('Approval Webhook').first().json.body.reviewerEmail }}\",\n  \"reviewerName\": \"{{ $('Approval Webhook').first().json.body.reviewerName }}\",\n  \"customerEmail\": \"{{ $('Approval Webhook').first().json.body.customerEmail || 'N/A' }}\",\n  \"customerName\": \"{{ $('Approval Webhook').first().json.body.customerName || 'N/A' }}\",\n  \"editNotes\": \"{{ $('Approval Webhook').first().json.body.editNotes || '' }}\",\n  \"infoRequest\": \"{{ $('Approval Webhook').first().json.body.infoRequest || '' }}\",\n  \"workflowRunId\": \"{{ $execution.id }}\",\n  \"result\": \"success\"\n}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "node-audit-log",
+      "name": "Write Audit Log",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2260, 480]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"action\": \"{{ $('Approval Webhook').first().json.body.action }}\",\n  \"timestamp\": \"{{ new Date().toISOString() }}\",\n  \"workflowRunId\": \"{{ $execution.id }}\"\n}"
+      },
+      "id": "node-respond-success",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2500, 480]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"success\": false, \"error\": \"Invalid request: missing required fields (action, reviewerEmail)\" }",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "node-respond-invalid",
+      "name": "Respond Invalid",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1060, 700]
+    }
+  ],
+  "connections": {
+    "Approval Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Request": {
+      "main": [
+        [
+          {
+            "node": "Route by Action",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Invalid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Action": {
+      "main": [
+        [
+          {
+            "node": "Send Draft via Outlook",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Draft as Approved",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Draft Needs Edits",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Claude - Generate Follow-up",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Draft via Outlook": {
+      "main": [
+        [
+          {
+            "node": "Notify Email Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Email Sent": {
+      "main": [
+        [
+          {
+            "node": "Write Audit Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Draft as Approved": {
+      "main": [
+        [
+          {
+            "node": "Notify Draft Approved",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Draft Approved": {
+      "main": [
+        [
+          {
+            "node": "Write Audit Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Draft Needs Edits": {
+      "main": [
+        [
+          {
+            "node": "Notify Edits Requested",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Edits Requested": {
+      "main": [
+        [
+          {
+            "node": "Write Audit Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude - Generate Follow-up": {
+      "main": [
+        [
+          {
+            "node": "Parse Follow-up Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Follow-up Content": {
+      "main": [
+        [
+          {
+            "node": "Create Follow-up Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Follow-up Draft": {
+      "main": [
+        [
+          {
+            "node": "Notify Follow-up Created",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Follow-up Created": {
+      "main": [
+        [
+          {
+            "node": "Write Audit Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Audit Log": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "wmf-error-handler",
+    "timezone": "America/New_York",
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "wmf-n8n-production"
+  },
+  "id": "wmf-approval-webhook",
+  "tags": [
+    {
+      "id": "tag-wmf",
+      "name": "WMF-Production",
+      "createdAt": "2025-01-15T00:00:00.000Z",
+      "updatedAt": "2025-01-15T00:00:00.000Z"
+    },
+    {
+      "id": "tag-approval",
+      "name": "Approval-Flow",
+      "createdAt": "2025-01-15T00:00:00.000Z",
+      "updatedAt": "2025-01-15T00:00:00.000Z"
+    }
+  ]
+}

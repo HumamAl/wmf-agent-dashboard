@@ -1,0 +1,558 @@
+{
+  "name": "WMF Email Monitor & Classification",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## WMF Email Monitor & Classification Workflow\n\nThis workflow monitors the sales@windsormetalfinishing.com inbox for new emails, classifies them using Claude AI, and routes them to the appropriate downstream workflow.\n\n**Classification Categories:**\n- RFQ (Request for Quote)\n- Order Status Inquiry\n- Change Request\n- Administrative\n- Spam\n\n**Trigger:** New email arrives in Outlook inbox\n**Output:** Classified email routed to appropriate handler",
+        "height": 340,
+        "width": 420,
+        "color": 4
+      },
+      "id": "sticky-overview",
+      "name": "Workflow Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [80, 60]
+    },
+    {
+      "parameters": {
+        "content": "### Step 1: Email Trigger\nMonitors the sales inbox via Microsoft Graph API.\nCaptures subject, body, sender, thread ID, and attachment metadata.",
+        "height": 160,
+        "width": 300,
+        "color": 6
+      },
+      "id": "sticky-trigger",
+      "name": "Trigger Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [560, 60]
+    },
+    {
+      "parameters": {
+        "content": "### Step 2: Claude Classification\nSends email content to Anthropic Claude API with a structured classification prompt. Returns category, confidence score, and summary.",
+        "height": 160,
+        "width": 300,
+        "color": 6
+      },
+      "id": "sticky-classify",
+      "name": "Classification Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [940, 60]
+    },
+    {
+      "parameters": {
+        "content": "### Step 3: Route by Category\nSwitch node routes classified emails to the appropriate downstream workflow via webhook trigger.",
+        "height": 160,
+        "width": 300,
+        "color": 6
+      },
+      "id": "sticky-route",
+      "name": "Routing Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1340, 60]
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute",
+              "minute": 2
+            }
+          ]
+        },
+        "filters": {
+          "foldersToInclude": ["Inbox"],
+          "readStatus": "unread"
+        },
+        "options": {
+          "downloadAttachments": true
+        }
+      },
+      "id": "node-outlook-trigger",
+      "name": "New Email Received",
+      "type": "n8n-nodes-base.microsoftOutlookTrigger",
+      "typeVersion": 2,
+      "position": [620, 300],
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "id": "wmf-outlook-cred",
+          "name": "WMF Outlook - sales@windsormetalfinishing.com"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "field-subject",
+              "name": "emailSubject",
+              "value": "={{ $json.subject }}",
+              "type": "string"
+            },
+            {
+              "id": "field-body",
+              "name": "emailBody",
+              "value": "={{ $json.body.content }}",
+              "type": "string"
+            },
+            {
+              "id": "field-bodyPreview",
+              "name": "emailBodyPreview",
+              "value": "={{ $json.bodyPreview }}",
+              "type": "string"
+            },
+            {
+              "id": "field-sender",
+              "name": "senderEmail",
+              "value": "={{ $json.from.emailAddress.address }}",
+              "type": "string"
+            },
+            {
+              "id": "field-senderName",
+              "name": "senderName",
+              "value": "={{ $json.from.emailAddress.name }}",
+              "type": "string"
+            },
+            {
+              "id": "field-threadId",
+              "name": "conversationId",
+              "value": "={{ $json.conversationId }}",
+              "type": "string"
+            },
+            {
+              "id": "field-messageId",
+              "name": "messageId",
+              "value": "={{ $json.id }}",
+              "type": "string"
+            },
+            {
+              "id": "field-receivedAt",
+              "name": "receivedAt",
+              "value": "={{ $json.receivedDateTime }}",
+              "type": "string"
+            },
+            {
+              "id": "field-hasAttachments",
+              "name": "hasAttachments",
+              "value": "={{ $json.hasAttachments }}",
+              "type": "boolean"
+            },
+            {
+              "id": "field-attachments",
+              "name": "attachmentNames",
+              "value": "={{ $json.attachments ? $json.attachments.map(a => a.name).join(', ') : 'None' }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "node-extract-fields",
+      "name": "Extract Email Fields",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [840, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $credentials.httpHeaderAuth.value }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-5-20250929\",\n  \"max_tokens\": 1024,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"You are an email classifier for Windsor Metal Finishing (WMF), an architectural aluminum finishing company. Classify the following email into exactly one category.\\n\\nCategories:\\n- RFQ: Request for quote, pricing inquiry, bid request, new project inquiry with specs\\n- ORDER_STATUS: Questions about existing order status, delivery dates, tracking, shipment updates\\n- CHANGE_REQUEST: Modifications to existing orders, color changes, quantity adjustments, schedule changes\\n- ADMINISTRATIVE: Invoicing, payments, account setup, general correspondence, certifications\\n- SPAM: Unsolicited marketing, irrelevant messages, phishing attempts\\n\\nEmail Details:\\nFrom: {{ $json.senderName }} <{{ $json.senderEmail }}>\\nSubject: {{ $json.emailSubject }}\\nBody: {{ $json.emailBodyPreview }}\\nAttachments: {{ $json.attachmentNames }}\\n\\nRespond with ONLY a JSON object (no markdown):\\n{\\n  \\\"category\\\": \\\"RFQ|ORDER_STATUS|CHANGE_REQUEST|ADMINISTRATIVE|SPAM\\\",\\n  \\\"confidence\\\": 0.0-1.0,\\n  \\\"summary\\\": \\\"brief one-line summary\\\",\\n  \\\"priority\\\": \\\"high|medium|low\\\",\\n  \\\"reasoning\\\": \\\"brief explanation of classification\\\"\\n}\"\n    }\n  ]\n}",
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "node-claude-classify",
+      "name": "Claude - Classify Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1080, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "wmf-anthropic-key",
+          "name": "Anthropic API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst emailData = $('Extract Email Fields').first().json;\n\nlet classification;\ntry {\n  const content = response.content[0].text;\n  classification = JSON.parse(content);\n} catch (e) {\n  classification = {\n    category: 'ADMINISTRATIVE',\n    confidence: 0.0,\n    summary: 'Classification parse error - defaulting to Administrative',\n    priority: 'medium',\n    reasoning: 'Failed to parse Claude response'\n  };\n}\n\nreturn [{\n  json: {\n    ...emailData,\n    classification: classification.category,\n    confidence: classification.confidence,\n    summary: classification.summary,\n    priority: classification.priority,\n    reasoning: classification.reasoning,\n    classifiedAt: new Date().toISOString(),\n    workflowRunId: $execution.id\n  }\n}];"
+      },
+      "id": "node-parse-classification",
+      "name": "Parse Classification Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1300, 300]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "rules": [
+            {
+              "outputIndex": 0,
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.classification }}",
+                    "rightValue": "RFQ",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "outputIndex": 1,
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.classification }}",
+                    "rightValue": "ORDER_STATUS",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "outputIndex": 2,
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.classification }}",
+                    "rightValue": "CHANGE_REQUEST",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "outputIndex": 3,
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.classification }}",
+                    "rightValue": "ADMINISTRATIVE",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "outputIndex": 4,
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.classification }}",
+                    "rightValue": "SPAM",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "node-switch-category",
+      "name": "Route by Category",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [1540, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://n8n.windsormetalfinishing.com/webhook/rfq-extraction",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "node-webhook-rfq",
+      "name": "Trigger RFQ Extraction",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1820, 100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://n8n.windsormetalfinishing.com/webhook/order-status-inquiry",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "node-webhook-orderstatus",
+      "name": "Trigger Order Status Handler",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1820, 280]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://n8n.windsormetalfinishing.com/webhook/change-request",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "node-webhook-change",
+      "name": "Trigger Change Request Handler",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1820, 460]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://n8n.windsormetalfinishing.com/webhook/administrative",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "node-webhook-admin",
+      "name": "Queue Administrative",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1820, 640]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "update",
+        "messageId": "={{ $json.messageId }}",
+        "updateFields": {
+          "isRead": true,
+          "categories": ["Spam - Auto-Classified"]
+        }
+      },
+      "id": "node-mark-spam",
+      "name": "Mark as Spam & Archive",
+      "type": "n8n-nodes-base.microsoftOutlook",
+      "typeVersion": 2,
+      "position": [1820, 820],
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "id": "wmf-outlook-cred",
+          "name": "WMF Outlook - sales@windsormetalfinishing.com"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://n8n.windsormetalfinishing.com/webhook/classification-log",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ timestamp: $json.classifiedAt, messageId: $json.messageId, sender: $json.senderEmail, subject: $json.emailSubject, classification: $json.classification, confidence: $json.confidence, priority: $json.priority, summary: $json.summary, workflowRunId: $json.workflowRunId }) }}"
+      },
+      "id": "node-log-classification",
+      "name": "Log Classification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1540, 560]
+    },
+    {
+      "parameters": {
+        "content": "### Classification Logging\nEvery classified email is logged for audit trail and dashboard analytics, regardless of category.",
+        "height": 120,
+        "width": 280,
+        "color": 3
+      },
+      "id": "sticky-logging",
+      "name": "Logging Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1500, 700]
+    },
+    {
+      "parameters": {
+        "content": "### Spam Handling\nSpam emails are marked as read, categorized, and archived. No downstream workflow is triggered.",
+        "height": 120,
+        "width": 280,
+        "color": 2
+      },
+      "id": "sticky-spam",
+      "name": "Spam Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1800, 960]
+    }
+  ],
+  "connections": {
+    "New Email Received": {
+      "main": [
+        [
+          {
+            "node": "Extract Email Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Email Fields": {
+      "main": [
+        [
+          {
+            "node": "Claude - Classify Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude - Classify Email": {
+      "main": [
+        [
+          {
+            "node": "Parse Classification Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Classification Result": {
+      "main": [
+        [
+          {
+            "node": "Route by Category",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Classification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Category": {
+      "main": [
+        [
+          {
+            "node": "Trigger RFQ Extraction",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Trigger Order Status Handler",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Trigger Change Request Handler",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Queue Administrative",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark as Spam & Archive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "wmf-error-handler",
+    "timezone": "America/New_York",
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "wmf-n8n-production"
+  },
+  "id": "wmf-email-monitor-classify",
+  "tags": [
+    {
+      "id": "tag-wmf",
+      "name": "WMF-Production",
+      "createdAt": "2025-01-15T00:00:00.000Z",
+      "updatedAt": "2025-01-15T00:00:00.000Z"
+    },
+    {
+      "id": "tag-email",
+      "name": "Email-Processing",
+      "createdAt": "2025-01-15T00:00:00.000Z",
+      "updatedAt": "2025-01-15T00:00:00.000Z"
+    }
+  ]
+}

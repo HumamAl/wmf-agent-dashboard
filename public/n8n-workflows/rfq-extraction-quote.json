@@ -1,0 +1,535 @@
+{
+  "name": "WMF RFQ Extraction & Quote Generation",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## WMF RFQ Extraction & Quote Generation\n\nThis workflow receives classified RFQ emails, extracts structured data using Claude AI, populates a quote template, saves it to SharePoint, and notifies the team for review.\n\n**Input:** Webhook trigger from email classification workflow\n**Output:** Draft quote saved to SharePoint + Teams notification\n\n**Extracted Fields:**\n- Customer name, contact, ship-to address\n- Part descriptions, quantities, finish system\n- Colors (RAL/custom), dimensions, masking notes\n- Lead time requirements, delivery preferences",
+        "height": 380,
+        "width": 440,
+        "color": 4
+      },
+      "id": "sticky-overview",
+      "name": "Workflow Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [40, 40]
+    },
+    {
+      "parameters": {
+        "content": "### Webhook Trigger\nReceives classified RFQ email data from the Email Monitor workflow. Validates required fields before processing.",
+        "height": 120,
+        "width": 280,
+        "color": 6
+      },
+      "id": "sticky-trigger",
+      "name": "Trigger Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [540, 40]
+    },
+    {
+      "parameters": {
+        "content": "### Claude RFQ Extraction\nUses Claude to parse free-form email text into structured RFQ data with confidence scores for each field. If confidence is below 0.7 for critical fields, the quote is flagged for manual review.",
+        "height": 140,
+        "width": 320,
+        "color": 6
+      },
+      "id": "sticky-extraction",
+      "name": "Extraction Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [920, 40]
+    },
+    {
+      "parameters": {
+        "content": "### Error Handling Path\nIf Claude extraction fails or returns malformed data, the workflow falls back to manual processing. The original email is forwarded to the sales team with an error note.",
+        "height": 140,
+        "width": 300,
+        "color": 2
+      },
+      "id": "sticky-error",
+      "name": "Error Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [920, 680]
+    },
+    {
+      "parameters": {
+        "content": "### Quote Template Population\nUses Microsoft Excel node to populate the WMF standard quote template with extracted data. Template includes pricing formulas that auto-calculate based on finish system, square footage, and quantity.",
+        "height": 140,
+        "width": 340,
+        "color": 6
+      },
+      "id": "sticky-template",
+      "name": "Template Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1480, 40]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "rfq-extraction",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "node-webhook",
+      "name": "RFQ Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [580, 280],
+      "webhookId": "wmf-rfq-extraction"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.body.emailBody }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty"
+              }
+            },
+            {
+              "leftValue": "={{ $json.body.senderEmail }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "node-validate-input",
+      "name": "Validate Input Data",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [800, 280]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $credentials.httpHeaderAuth.value }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-5-20250929\",\n  \"max_tokens\": 4096,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"You are an RFQ data extraction specialist for Windsor Metal Finishing (WMF), an architectural aluminum powder coating company. Extract structured data from the following email.\\n\\nContext about WMF:\\n- Finish systems: AAMA 2604 (high-performance), AAMA 2605 (superior/fluoropolymer), AAMA 2603 (standard)\\n- Common colors: Dark Bronze, Black, Clear Anodize look, Bone White, Hartford Green, custom RAL colors\\n- Services: Powder coating, liquid coating, anodizing, packaging/shipping\\n- Typical parts: Aluminum extrusions, panels, curtain wall, storefronts, louvers, sunshades\\n\\nEmail From: {{ $json.body.senderName }} <{{ $json.body.senderEmail }}>\\nSubject: {{ $json.body.emailSubject }}\\nBody:\\n{{ $json.body.emailBody }}\\n\\nAttachments mentioned: {{ $json.body.attachmentNames }}\\n\\nExtract and return ONLY a JSON object (no markdown) with the following structure:\\n{\\n  \\\"customer\\\": {\\n    \\\"company_name\\\": { \\\"value\\\": \\\"\\\", \\\"confidence\\\": 0.0 },\\n    \\\"contact_name\\\": { \\\"value\\\": \\\"\\\", \\\"confidence\\\": 0.0 },\\n    \\\"contact_email\\\": { \\\"value\\\": \\\"\\\", \\\"confidence\\\": 0.0 },\\n    \\\"contact_phone\\\": { \\\"value\\\": \\\"\\\", \\\"confidence\\\": 0.0 },\\n    \\\"ship_to_address\\\": { \\\"value\\\": \\\"\\\", \\\"confidence\\\": 0.0 }\\n  },\\n  \\\"project\\\": {\\n    \\\"project_name\\\": { \\\"value\\\": \\\"\\\", \\\"confidence\\\": 0.0 },\\n    \\\"general_contractor\\\": { \\\"value\\\": \\\"\\\", \\\"confidence\\\": 0.0 },\\n    \\\"architect\\\": { \\\"value\\\": \\\"\\\", \\\"confidence\\\": 0.0 },\\n    \\\"location\\\": { \\\"value\\\": \\\"\\\", \\\"confidence\\\": 0.0 }\\n  },\\n  \\\"line_items\\\": [\\n    {\\n      \\\"part_description\\\": { \\\"value\\\": \\\"\\\", \\\"confidence\\\": 0.0 },\\n      \\\"quantity\\\": { \\\"value\\\": 0, \\\"confidence\\\": 0.0 },\\n      \\\"finish_system\\\": { \\\"value\\\": \\\"\\\", \\\"confidence\\\": 0.0 },\\n      \\\"color\\\": { \\\"value\\\": \\\"\\\", \\\"confidence\\\": 0.0 },\\n      \\\"dimensions\\\": { \\\"value\\\": \\\"\\\", \\\"confidence\\\": 0.0 },\\n      \\\"surface_area_sqft\\\": { \\\"value\\\": 0, \\\"confidence\\\": 0.0 },\\n      \\\"masking_notes\\\": { \\\"value\\\": \\\"\\\", \\\"confidence\\\": 0.0 }\\n    }\\n  ],\\n  \\\"requirements\\\": {\\n    \\\"lead_time\\\": { \\\"value\\\": \\\"\\\", \\\"confidence\\\": 0.0 },\\n    \\\"delivery_preference\\\": { \\\"value\\\": \\\"\\\", \\\"confidence\\\": 0.0 },\\n    \\\"special_packaging\\\": { \\\"value\\\": \\\"\\\", \\\"confidence\\\": 0.0 },\\n    \\\"certifications_required\\\": { \\\"value\\\": \\\"\\\", \\\"confidence\\\": 0.0 },\\n    \\\"special_instructions\\\": { \\\"value\\\": \\\"\\\", \\\"confidence\\\": 0.0 }\\n  },\\n  \\\"extraction_notes\\\": \\\"any ambiguities or items needing clarification\\\",\\n  \\\"overall_confidence\\\": 0.0\\n}\\n\\nSet confidence to 0.0 for fields not found in the email. Be precise with quantities and specifications.\"\n    }\n  ]\n}",
+        "options": {
+          "timeout": 60000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "node-claude-extract",
+      "name": "Claude - Extract RFQ Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1060, 240],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "wmf-anthropic-key",
+          "name": "Anthropic API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst emailData = $('RFQ Webhook Trigger').first().json.body;\n\nlet rfqData;\ntry {\n  const content = response.content[0].text;\n  rfqData = JSON.parse(content);\n} catch (e) {\n  throw new Error(`Failed to parse Claude RFQ extraction response: ${e.message}`);\n}\n\n// Check for low-confidence critical fields\nconst criticalFields = [\n  { path: 'customer.company_name', label: 'Company Name' },\n  { path: 'customer.contact_email', label: 'Contact Email' },\n  { path: 'line_items', label: 'Line Items' }\n];\n\nconst warnings = [];\nfor (const field of criticalFields) {\n  const parts = field.path.split('.');\n  let val = rfqData;\n  for (const p of parts) val = val?.[p];\n  \n  if (field.path === 'line_items') {\n    if (!Array.isArray(val) || val.length === 0) {\n      warnings.push(`${field.label}: No line items extracted`);\n    }\n  } else if (!val || val.confidence < 0.7) {\n    warnings.push(`${field.label}: Low confidence (${val?.confidence || 0})`);\n  }\n}\n\n// Generate quote number\nconst now = new Date();\nconst quoteNumber = `WMF-Q-${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}-${Math.random().toString(36).substr(2,5).toUpperCase()}`;\n\nreturn [{\n  json: {\n    quoteNumber,\n    rfqData,\n    originalEmail: {\n      messageId: emailData.messageId,\n      senderEmail: emailData.senderEmail,\n      senderName: emailData.senderName,\n      subject: emailData.emailSubject,\n      receivedAt: emailData.receivedAt,\n      conversationId: emailData.conversationId\n    },\n    warnings,\n    needsManualReview: warnings.length > 0 || rfqData.overall_confidence < 0.7,\n    extractedAt: now.toISOString(),\n    workflowRunId: $execution.id\n  }\n}];"
+      },
+      "id": "node-parse-rfq",
+      "name": "Parse & Validate RFQ Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1300, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst rfq = data.rfqData;\n\n// Build spreadsheet rows for the quote template\nconst headerRow = {\n  quoteNumber: data.quoteNumber,\n  date: new Date().toLocaleDateString('en-US'),\n  validUntil: new Date(Date.now() + 30*24*60*60*1000).toLocaleDateString('en-US'),\n  customerCompany: rfq.customer.company_name.value || 'TBD',\n  contactName: rfq.customer.contact_name.value || 'TBD',\n  contactEmail: rfq.customer.contact_email.value || 'TBD',\n  contactPhone: rfq.customer.contact_phone.value || '',\n  shipTo: rfq.customer.ship_to_address.value || 'TBD',\n  projectName: rfq.project.project_name.value || '',\n  generalContractor: rfq.project.general_contractor.value || '',\n  architect: rfq.project.architect.value || '',\n  projectLocation: rfq.project.location.value || '',\n  leadTime: rfq.requirements.lead_time.value || 'Standard (10-15 business days)',\n  specialInstructions: rfq.requirements.special_instructions.value || 'None',\n  certifications: rfq.requirements.certifications_required.value || 'Standard',\n  packaging: rfq.requirements.special_packaging.value || 'Standard WMF packaging'\n};\n\nconst lineItems = (rfq.line_items || []).map((item, idx) => ({\n  lineNumber: idx + 1,\n  partDescription: item.part_description.value || 'TBD',\n  quantity: item.quantity.value || 0,\n  finishSystem: item.finish_system.value || 'TBD',\n  color: item.color.value || 'TBD',\n  dimensions: item.dimensions.value || 'TBD',\n  surfaceAreaSqFt: item.surface_area_sqft.value || 0,\n  maskingNotes: item.masking_notes.value || 'None',\n  unitPrice: '',  // To be filled by estimator\n  totalPrice: ''  // Formula in template\n}));\n\nreturn [{\n  json: {\n    ...data,\n    quoteTemplate: {\n      header: headerRow,\n      lineItems: lineItems\n    }\n  }\n}];"
+      },
+      "id": "node-prepare-template",
+      "name": "Prepare Quote Template Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1540, 240]
+    },
+    {
+      "parameters": {
+        "operation": "workbook",
+        "workbook": {
+          "__rl": true,
+          "value": "WMF Quote Templates/Quote_Template_Master.xlsx",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "node-read-template",
+      "name": "Read Quote Template",
+      "type": "n8n-nodes-base.microsoftExcel",
+      "typeVersion": 2,
+      "position": [1780, 240],
+      "credentials": {
+        "microsoftExcelOAuth2Api": {
+          "id": "wmf-excel-cred",
+          "name": "WMF Microsoft 365"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst template = data.quoteTemplate;\n\n// Build the Excel update payload\nconst headerValues = [\n  ['Quote Number:', template.header.quoteNumber],\n  ['Date:', template.header.date],\n  ['Valid Until:', template.header.validUntil],\n  ['', ''],\n  ['Customer:', template.header.customerCompany],\n  ['Contact:', template.header.contactName],\n  ['Email:', template.header.contactEmail],\n  ['Phone:', template.header.contactPhone],\n  ['Ship To:', template.header.shipTo],\n  ['', ''],\n  ['Project:', template.header.projectName],\n  ['GC:', template.header.generalContractor],\n  ['Architect:', template.header.architect],\n  ['Location:', template.header.projectLocation],\n  ['', ''],\n  ['Lead Time:', template.header.leadTime],\n  ['Certifications:', template.header.certifications],\n  ['Packaging:', template.header.packaging],\n  ['Special Instructions:', template.header.specialInstructions]\n];\n\nconst lineItemRows = template.lineItems.map(item => [\n  item.lineNumber,\n  item.partDescription,\n  item.quantity,\n  item.finishSystem,\n  item.color,\n  item.dimensions,\n  item.surfaceAreaSqFt,\n  item.maskingNotes,\n  item.unitPrice,\n  item.totalPrice\n]);\n\nreturn [{\n  json: {\n    ...data,\n    excelPayload: {\n      headerRange: 'Quote!A1:B19',\n      headerValues: headerValues,\n      lineItemRange: `Quote!A22:J${22 + lineItemRows.length - 1}`,\n      lineItemValues: lineItemRows\n    }\n  }\n}];"
+      },
+      "id": "node-build-excel",
+      "name": "Build Excel Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2020, 240]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://graph.microsoft.com/v1.0/drives/{driveId}/items/{itemId}/workbook/worksheets('Quote')/range(address='{{ $json.excelPayload.headerRange }}')",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"values\": {{ JSON.stringify($json.excelPayload.headerValues) }} }",
+        "options": {}
+      },
+      "id": "node-write-header",
+      "name": "Write Header to Excel",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2260, 160],
+      "credentials": {
+        "oAuth2Api": {
+          "id": "wmf-graph-cred",
+          "name": "WMF Microsoft Graph API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://graph.microsoft.com/v1.0/drives/{driveId}/items/{itemId}/workbook/worksheets('Quote')/range(address='{{ $json.excelPayload.lineItemRange }}')",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"values\": {{ JSON.stringify($json.excelPayload.lineItemValues) }} }",
+        "options": {}
+      },
+      "id": "node-write-items",
+      "name": "Write Line Items to Excel",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2260, 340],
+      "credentials": {
+        "oAuth2Api": {
+          "id": "wmf-graph-cred",
+          "name": "WMF Microsoft Graph API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "driveItem",
+        "operation": "copy",
+        "driveId": "={{ $json.driveId }}",
+        "itemId": "={{ $json.templateItemId }}",
+        "additionalFields": {
+          "name": "={{ $json.quoteNumber }}.xlsx",
+          "parentReference": {
+            "driveId": "={{ $json.driveId }}",
+            "path": "/WMF Quotes/Drafts/{{ new Date().getFullYear() }}/{{ String(new Date().getMonth()+1).padStart(2,'0') }}"
+          }
+        }
+      },
+      "id": "node-save-sharepoint",
+      "name": "Save Quote to SharePoint",
+      "type": "n8n-nodes-base.microsoftOneDrive",
+      "typeVersion": 1,
+      "position": [2500, 240],
+      "credentials": {
+        "microsoftOneDriveOAuth2Api": {
+          "id": "wmf-onedrive-cred",
+          "name": "WMF OneDrive/SharePoint"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "chatMessage",
+        "operation": "create",
+        "teamId": "={{ $env.WMF_TEAMS_SALES_TEAM_ID }}",
+        "channelId": "={{ $env.WMF_TEAMS_RFQ_CHANNEL_ID }}",
+        "contentType": "html",
+        "message": "=<b>New RFQ Quote Draft Ready for Review</b><br><br><b>Quote #:</b> {{ $json.quoteNumber }}<br><b>Customer:</b> {{ $json.rfqData.customer.company_name.value || 'Unknown' }}<br><b>Contact:</b> {{ $json.rfqData.customer.contact_name.value || 'Unknown' }}<br><b>Project:</b> {{ $json.rfqData.project.project_name.value || 'Not specified' }}<br><b>Line Items:</b> {{ $json.rfqData.line_items.length }} item(s)<br><b>Finish System:</b> {{ $json.rfqData.line_items[0]?.finish_system?.value || 'See quote' }}<br><b>AI Confidence:</b> {{ Math.round($json.rfqData.overall_confidence * 100) }}%<br>{{ $json.needsManualReview ? '<br><span style=\"color:red\"><b>ATTENTION:</b> Low confidence - manual review required</span><br>Warnings: ' + $json.warnings.join(', ') : '' }}<br><br><a href=\"{{ $json.sharePointUrl }}\">Open Quote Draft</a> | <a href=\"https://wmf-dashboard.windsormetalfinishing.com/review/{{ $json.quoteNumber }}\">Review in Dashboard</a>",
+        "options": {}
+      },
+      "id": "node-teams-notify",
+      "name": "Notify Sales Team via Teams",
+      "type": "n8n-nodes-base.microsoftTeams",
+      "typeVersion": 2,
+      "position": [2740, 240],
+      "credentials": {
+        "microsoftTeamsOAuth2Api": {
+          "id": "wmf-teams-cred",
+          "name": "WMF Microsoft Teams"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, quoteNumber: $json.quoteNumber, needsManualReview: $json.needsManualReview, confidence: $json.rfqData.overall_confidence }) }}"
+      },
+      "id": "node-respond-success",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2980, 240]
+    },
+    {
+      "parameters": {
+        "resource": "chatMessage",
+        "operation": "create",
+        "teamId": "={{ $env.WMF_TEAMS_SALES_TEAM_ID }}",
+        "channelId": "={{ $env.WMF_TEAMS_RFQ_CHANNEL_ID }}",
+        "contentType": "html",
+        "message": "=<b style=\"color:red\">RFQ Processing Error</b><br><br><b>From:</b> {{ $('RFQ Webhook Trigger').first().json.body.senderEmail }}<br><b>Subject:</b> {{ $('RFQ Webhook Trigger').first().json.body.emailSubject }}<br><br>Automated extraction failed. Please process this RFQ manually.<br><br><b>Error:</b> {{ $json.error?.message || 'Unknown error' }}<br><b>Workflow Run:</b> {{ $execution.id }}",
+        "options": {}
+      },
+      "id": "node-error-teams",
+      "name": "Notify Error via Teams",
+      "type": "n8n-nodes-base.microsoftTeams",
+      "typeVersion": 2,
+      "position": [1300, 520],
+      "credentials": {
+        "microsoftTeamsOAuth2Api": {
+          "id": "wmf-teams-cred",
+          "name": "WMF Microsoft Teams"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, error: 'RFQ extraction failed - routed to manual processing', workflowRunId: $execution.id }) }}",
+        "options": {
+          "responseCode": 500
+        }
+      },
+      "id": "node-respond-error",
+      "name": "Respond Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1540, 520]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, error: 'Missing required input data' }) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "node-respond-invalid",
+      "name": "Respond Invalid Input",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1060, 480]
+    }
+  ],
+  "connections": {
+    "RFQ Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Validate Input Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Input Data": {
+      "main": [
+        [
+          {
+            "node": "Claude - Extract RFQ Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Invalid Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude - Extract RFQ Data": {
+      "main": [
+        [
+          {
+            "node": "Parse & Validate RFQ Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse & Validate RFQ Data": {
+      "main": [
+        [
+          {
+            "node": "Prepare Quote Template Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Quote Template Data": {
+      "main": [
+        [
+          {
+            "node": "Read Quote Template",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Quote Template": {
+      "main": [
+        [
+          {
+            "node": "Build Excel Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Excel Payload": {
+      "main": [
+        [
+          {
+            "node": "Write Header to Excel",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Write Line Items to Excel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Line Items to Excel": {
+      "main": [
+        [
+          {
+            "node": "Save Quote to SharePoint",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Quote to SharePoint": {
+      "main": [
+        [
+          {
+            "node": "Notify Sales Team via Teams",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Sales Team via Teams": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Error via Teams": {
+      "main": [
+        [
+          {
+            "node": "Respond Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "wmf-error-handler",
+    "timezone": "America/New_York",
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "wmf-n8n-production"
+  },
+  "id": "wmf-rfq-extraction-quote",
+  "tags": [
+    {
+      "id": "tag-wmf",
+      "name": "WMF-Production",
+      "createdAt": "2025-01-15T00:00:00.000Z",
+      "updatedAt": "2025-01-15T00:00:00.000Z"
+    },
+    {
+      "id": "tag-rfq",
+      "name": "RFQ-Processing",
+      "createdAt": "2025-01-15T00:00:00.000Z",
+      "updatedAt": "2025-01-15T00:00:00.000Z"
+    }
+  ]
+}
