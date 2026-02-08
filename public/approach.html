@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WMF Customer Service AI Agent - Technical Approach</title>
+<style>
+  :root {
+    --bg: #fafafa;
+    --card: #ffffff;
+    --text: #1a1a1a;
+    --muted: #6b7280;
+    --border: #e5e7eb;
+    --accent: #2563eb;
+    --accent-light: #eff6ff;
+    --green: #059669;
+    --green-light: #ecfdf5;
+    --amber: #d97706;
+    --amber-light: #fffbeb;
+    --purple: #7c3aed;
+    --purple-light: #f5f3ff;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .hero {
+    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+    color: white;
+    padding: 60px 24px;
+    text-align: center;
+  }
+
+  .hero-badge {
+    display: inline-block;
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 20px;
+    padding: 6px 16px;
+    font-size: 13px;
+    margin-bottom: 20px;
+    letter-spacing: 0.5px;
+  }
+
+  .hero h1 {
+    font-size: 36px;
+    font-weight: 700;
+    margin-bottom: 12px;
+    letter-spacing: -0.5px;
+  }
+
+  .hero p {
+    font-size: 18px;
+    color: rgba(255,255,255,0.7);
+    max-width: 600px;
+    margin: 0 auto 24px;
+  }
+
+  .hero-links {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .hero-links a {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    text-decoration: none;
+    transition: transform 0.15s;
+  }
+
+  .hero-links a:hover { transform: translateY(-1px); }
+
+  .btn-primary {
+    background: var(--accent);
+    color: white;
+  }
+
+  .btn-outline {
+    background: rgba(255,255,255,0.1);
+    color: white;
+    border: 1px solid rgba(255,255,255,0.25);
+  }
+
+  .container {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  section {
+    padding: 60px 0;
+  }
+
+  section + section {
+    border-top: 1px solid var(--border);
+  }
+
+  h2 {
+    font-size: 26px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    letter-spacing: -0.3px;
+  }
+
+  h3 {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+
+  .section-subtitle {
+    color: var(--muted);
+    font-size: 15px;
+    margin-bottom: 32px;
+  }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+  }
+
+  .card + .card { margin-top: 16px; }
+
+  /* Architecture Diagram */
+  .arch-flow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    padding: 32px 0;
+  }
+
+  .arch-node {
+    background: var(--card);
+    border: 2px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 28px;
+    text-align: center;
+    width: 100%;
+    max-width: 440px;
+    position: relative;
+  }
+
+  .arch-node.highlight {
+    border-color: var(--accent);
+    background: var(--accent-light);
+  }
+
+  .arch-node.ai {
+    border-color: var(--purple);
+    background: var(--purple-light);
+  }
+
+  .arch-node.human {
+    border-color: var(--green);
+    background: var(--green-light);
+  }
+
+  .arch-node strong {
+    display: block;
+    font-size: 14px;
+  }
+
+  .arch-node span {
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .arch-arrow {
+    width: 2px;
+    height: 28px;
+    background: var(--border);
+    position: relative;
+  }
+
+  .arch-arrow::after {
+    content: '';
+    position: absolute;
+    bottom: -4px;
+    left: -4px;
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 6px solid var(--border);
+  }
+
+  .arch-split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    width: 100%;
+    max-width: 560px;
+  }
+
+  .arch-split .arch-node {
+    max-width: none;
+  }
+
+  /* Workflow Steps */
+  .steps {
+    display: grid;
+    gap: 16px;
+  }
+
+  .step {
+    display: grid;
+    grid-template-columns: 40px 1fr;
+    gap: 16px;
+    align-items: start;
+  }
+
+  .step-num {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 16px;
+    color: white;
+    background: var(--accent);
+    flex-shrink: 0;
+  }
+
+  .step-content h3 {
+    margin-bottom: 4px;
+  }
+
+  .step-content p {
+    color: var(--muted);
+    font-size: 14px;
+  }
+
+  /* Tech Stack */
+  .tech-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 16px;
+  }
+
+  .tech-item {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+  }
+
+  .tech-item .label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+
+  .tech-item .value {
+    font-weight: 600;
+    font-size: 15px;
+  }
+
+  .tech-item .desc {
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+
+  /* Timeline */
+  .timeline {
+    display: grid;
+    gap: 0;
+  }
+
+  .phase {
+    display: grid;
+    grid-template-columns: 100px 1fr;
+    gap: 20px;
+    padding: 20px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .phase:last-child { border-bottom: none; }
+
+  .phase-time {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    padding-top: 2px;
+  }
+
+  .phase-content h3 { margin-bottom: 4px; }
+
+  .phase-content p {
+    font-size: 14px;
+    color: var(--muted);
+  }
+
+  .deliverables {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  .tag {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  .tag-blue { background: var(--accent-light); color: var(--accent); }
+  .tag-green { background: var(--green-light); color: var(--green); }
+  .tag-amber { background: var(--amber-light); color: var(--amber); }
+  .tag-purple { background: var(--purple-light); color: var(--purple); }
+
+  /* Guardrails */
+  .guardrail-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+  }
+
+  .guardrail {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    border-left: 4px solid var(--green);
+  }
+
+  .guardrail h3 { font-size: 15px; margin-bottom: 6px; }
+  .guardrail p { font-size: 13px; color: var(--muted); }
+
+  /* Footer */
+  .footer {
+    background: #1e293b;
+    color: rgba(255,255,255,0.7);
+    text-align: center;
+    padding: 40px 24px;
+    font-size: 14px;
+  }
+
+  .footer a {
+    color: #93c5fd;
+    text-decoration: none;
+  }
+
+  .footer strong {
+    color: white;
+  }
+
+  @media (max-width: 640px) {
+    .hero h1 { font-size: 28px; }
+    .arch-split { grid-template-columns: 1fr; }
+    .phase { grid-template-columns: 1fr; gap: 4px; }
+    .guardrail-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Hero -->
+<div class="hero">
+  <div class="hero-badge">TECHNICAL PROPOSAL</div>
+  <h1>WMF Customer Service AI Agent</h1>
+  <p>AI-powered RFQ automation and order status management for Windsor Metal Finishing, with human-in-the-loop approval at every step.</p>
+  <div class="hero-links">
+    <a href="https://wmf-agent-dashboard.vercel.app" class="btn-primary" target="_blank">View Live Demo</a>
+    <a href="https://github.com/HumamAl/wmf-agent-dashboard" class="btn-outline" target="_blank">Source Code</a>
+  </div>
+</div>
+
+<!-- Architecture -->
+<section>
+  <div class="container">
+    <h2>System Architecture</h2>
+    <p class="section-subtitle">End-to-end data flow from inbound email to human-approved response</p>
+
+    <div class="arch-flow">
+      <div class="arch-node">
+        <strong>Inbound Emails &amp; Order Data</strong>
+        <span>Customer RFQs, status inquiries, change requests</span>
+      </div>
+      <div class="arch-arrow"></div>
+      <div class="arch-node highlight">
+        <strong>Microsoft 365</strong>
+        <span>Sales inbox (sales@windsormetalfinishing) + Excel workbooks on OneDrive</span>
+      </div>
+      <div class="arch-arrow"></div>
+      <div class="arch-node highlight">
+        <strong>n8n Workflow Engine</strong>
+        <span>Email monitoring, scheduling, routing, approval webhooks</span>
+      </div>
+      <div class="arch-arrow"></div>
+      <div class="arch-node ai">
+        <strong>AI Classification &amp; Extraction</strong>
+        <span>Claude API &mdash; email classification, structured RFQ data extraction with confidence scores</span>
+      </div>
+      <div class="arch-arrow"></div>
+      <div class="arch-split">
+        <div class="arch-node">
+          <strong>RFQ Pipeline</strong>
+          <span>Extract data &rarr; populate Excel quote template &rarr; save to SharePoint</span>
+        </div>
+        <div class="arch-node">
+          <strong>Status Pipeline</strong>
+          <span>Read order workbook &rarr; group by customer &rarr; draft update emails</span>
+        </div>
+      </div>
+      <div class="arch-arrow"></div>
+      <div class="arch-node human">
+        <strong>Human Review &amp; Approval</strong>
+        <span>Review dashboard &mdash; approve, edit, reject, or request more info before anything sends</span>
+      </div>
+      <div class="arch-arrow"></div>
+      <div class="arch-node human">
+        <strong>Human-Sent Customer Email</strong>
+        <span>Sent from sales@windsormetalfinishing by a real person, every time</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Tech Stack -->
+<section>
+  <div class="container">
+    <h2>Technology Stack</h2>
+    <p class="section-subtitle">Each component chosen for a specific reason &mdash; no unnecessary complexity</p>
+
+    <div class="tech-grid">
+      <div class="tech-item">
+        <div class="label">Workflow Engine</div>
+        <div class="value">n8n</div>
+        <div class="desc">Visual workflows your team can inspect and modify. Self-hosted or cloud.</div>
+      </div>
+      <div class="tech-item">
+        <div class="label">AI / NLP</div>
+        <div class="value">Claude API</div>
+        <div class="desc">Email classification, RFQ data extraction with structured output and confidence scoring.</div>
+      </div>
+      <div class="tech-item">
+        <div class="label">Email &amp; Files</div>
+        <div class="value">Microsoft Graph API</div>
+        <div class="desc">M365 shared mailbox monitoring, OneDrive/SharePoint file access, Outlook draft creation.</div>
+      </div>
+      <div class="tech-item">
+        <div class="label">Notifications</div>
+        <div class="value">Microsoft Teams</div>
+        <div class="desc">Review notifications, approval requests, daily summaries via Teams channels.</div>
+      </div>
+      <div class="tech-item">
+        <div class="label">Quote Templates</div>
+        <div class="value">Excel Automation</div>
+        <div class="desc">Populate your existing WMF quote template. Pricing auto-calculates from part details.</div>
+      </div>
+      <div class="tech-item">
+        <div class="label">Review Dashboard</div>
+        <div class="value">Next.js + Vercel</div>
+        <div class="desc">Fast, responsive web dashboard for reviewing drafts and managing approvals.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- RFQ Workflow -->
+<section>
+  <div class="container">
+    <h2>Objective #1: RFQ Automation</h2>
+    <p class="section-subtitle">From inbound email to draft quote, with AI extraction and human approval</p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-content">
+          <h3>Email Monitoring &amp; Intake</h3>
+          <p>n8n monitors sales@windsormetalfinishing via Microsoft Graph API. Captures email body, sender, subject, thread ID, and attachments (PDFs, drawings, forwarded specs).</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-content">
+          <h3>AI Classification</h3>
+          <p>Claude API classifies each email as: RFQ / New Quote Request, Order Status Inquiry, Change Request, Administrative, or Spam. Returns confidence score and reasoning. Emails classified as RFQ proceed to extraction.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-content">
+          <h3>Structured Data Extraction</h3>
+          <p>AI extracts: customer name &amp; contact, ship-to location, part descriptions, quantities (including tiers), finish system (AAMA 2604, 2605, etc.), color/RAL codes, dimensions, masking/packaging notes, and lead time. Each field includes a confidence score and source evidence.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-content">
+          <h3>Draft Quote Creation</h3>
+          <p>Populates your existing WMF Excel quote template with extracted data. Pricing auto-calculates after entering part details. Saved to SharePoint/OneDrive with version control.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">5</div>
+        <div class="step-content">
+          <h3>Human Review &amp; Approval</h3>
+          <p>Agent sends a Quote Review Package: link to draft quote, RFQ summary, missing info flags, suggested customer reply. Reviewer can Approve &amp; Send, Save, Request Edits, or Request More Customer Info. Nothing sends without human sign-off.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Order Status Workflow -->
+<section>
+  <div class="container">
+    <h2>Objective #2: Order Status Automation</h2>
+    <p class="section-subtitle">Daily customer status updates drafted automatically from your order workbook</p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-content">
+          <h3>Read Order Data</h3>
+          <p>Scheduled daily at 7:00 AM EST, the agent reads the order status Excel workbook from OneDrive. Columns: Customer, PO#, WO#, Part/Description, Quantity, Current Status, Promise Date, Ship Date, Notes.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-content">
+          <h3>Group &amp; Prepare</h3>
+          <p>Groups open orders by customer. For each customer, generates a professional status update email using WMF's standard template. Includes order numbers, current status, updated dates.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-content">
+          <h3>Flag Issues</h3>
+          <p>If data is missing or unclear, the agent flags the issue and includes a note for human review. No assumptions or inferred commitments. Late orders are highlighted.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-content">
+          <h3>Human Review &amp; Send</h3>
+          <p>Each email is queued as a draft in Outlook. Human CS rep opens, reviews for accuracy and tone, then sends from sales@windsormetalfinishing. Agent logs draft creation, reviewer, and send confirmation.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Guardrails -->
+<section>
+  <div class="container">
+    <h2>Guardrails &amp; Controls</h2>
+    <p class="section-subtitle">Safety-first design &mdash; the AI assists, humans decide</p>
+
+    <div class="guardrail-grid">
+      <div class="guardrail">
+        <h3>Human-in-the-Loop</h3>
+        <p>Every outbound customer email requires human approval before sending. The agent creates drafts, never sends autonomously.</p>
+      </div>
+      <div class="guardrail">
+        <h3>Confidence Thresholds</h3>
+        <p>Each extracted field carries a confidence score. Low-confidence fields are flagged for manual review rather than guessed.</p>
+      </div>
+      <div class="guardrail">
+        <h3>No Unauthorized Commitments</h3>
+        <p>No pricing, delivery dates, or engineering commitments are communicated without explicit human review and approval.</p>
+      </div>
+      <div class="guardrail">
+        <h3>Full Audit Trail</h3>
+        <p>Complete logging: original email, extracted data, draft quote/email, approval action, reviewer identity, and send confirmation.</p>
+      </div>
+      <div class="guardrail">
+        <h3>Source Evidence</h3>
+        <p>Every extracted data point links back to the specific email snippet or attachment it was derived from, enabling quick verification.</p>
+      </div>
+      <div class="guardrail">
+        <h3>Missing Data Detection</h3>
+        <p>The agent explicitly identifies what information is missing from an RFQ rather than making assumptions or filling in blanks.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Timeline -->
+<section>
+  <div class="container">
+    <h2>Delivery Timeline</h2>
+    <p class="section-subtitle">Phased approach &mdash; each phase ships something usable</p>
+
+    <div class="timeline">
+      <div class="phase">
+        <div class="phase-time">Week 1-2</div>
+        <div class="phase-content">
+          <h3>Phase 1: Email Intelligence</h3>
+          <p>M365 mailbox integration, email classification engine, RFQ data extraction pipeline with confidence scoring.</p>
+          <div class="deliverables">
+            <span class="tag tag-blue">Email Monitoring</span>
+            <span class="tag tag-purple">AI Classification</span>
+            <span class="tag tag-purple">Data Extraction</span>
+          </div>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="phase-time">Week 3-4</div>
+        <div class="phase-content">
+          <h3>Phase 2: Quote Automation</h3>
+          <p>Excel quote template integration, SharePoint/OneDrive storage, Teams review notifications, approval workflow.</p>
+          <div class="deliverables">
+            <span class="tag tag-blue">Excel Templates</span>
+            <span class="tag tag-green">Approval Workflow</span>
+            <span class="tag tag-blue">SharePoint</span>
+          </div>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="phase-time">Week 5-6</div>
+        <div class="phase-content">
+          <h3>Phase 3: Order Status</h3>
+          <p>Order workbook integration, customer grouping, daily status email drafting, Outlook draft queue, Teams summary.</p>
+          <div class="deliverables">
+            <span class="tag tag-blue">Daily Scheduling</span>
+            <span class="tag tag-amber">Status Emails</span>
+            <span class="tag tag-green">Draft Queue</span>
+          </div>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="phase-time">Week 7-8</div>
+        <div class="phase-content">
+          <h3>Phase 4: Polish &amp; Handoff</h3>
+          <p>Edge case handling, error recovery, performance tuning, configuration documentation, team training, production handoff.</p>
+          <div class="deliverables">
+            <span class="tag tag-amber">Testing</span>
+            <span class="tag tag-green">Documentation</span>
+            <span class="tag tag-green">Handoff</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Why n8n -->
+<section>
+  <div class="container">
+    <h2>Why n8n?</h2>
+    <p class="section-subtitle">The right tool for this job &mdash; not over-engineered, not under-built</p>
+
+    <div class="card">
+      <div class="steps">
+        <div class="step">
+          <div class="step-num" style="background: var(--green);">&#10003;</div>
+          <div class="step-content">
+            <h3>Visual Workflows</h3>
+            <p>Your team can see exactly what the agent does at each step. No black boxes. Workflows are inspectable, editable, and debuggable without writing code.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num" style="background: var(--green);">&#10003;</div>
+          <div class="step-content">
+            <h3>Native M365 Integration</h3>
+            <p>Built-in nodes for Outlook, OneDrive, SharePoint, Excel, and Teams. No custom API wrappers needed &mdash; just configure and connect.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num" style="background: var(--green);">&#10003;</div>
+          <div class="step-content">
+            <h3>Self-Hosted Option</h3>
+            <p>Your data stays on your infrastructure. No third-party SaaS routing your customer emails and pricing data through external servers.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num" style="background: var(--green);">&#10003;</div>
+          <div class="step-content">
+            <h3>Maintainable</h3>
+            <p>When business rules change (new email categories, updated templates, different approval chains), your team can adjust workflows without calling a developer.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Footer / CTA -->
+<div class="footer">
+  <p style="font-size: 18px; color: white; margin-bottom: 8px;"><strong>Ready to get started.</strong></p>
+  <p style="margin-bottom: 20px;">The prototype is live. The workflows are built. Let's connect and walk through the demo.</p>
+  <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+    <a href="https://wmf-agent-dashboard.vercel.app" style="display: inline-block; padding: 10px 24px; background: var(--accent); color: white; border-radius: 8px; text-decoration: none; font-weight: 500;">View Live Dashboard</a>
+    <a href="https://github.com/HumamAl/wmf-agent-dashboard" style="display: inline-block; padding: 10px 24px; background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.25); border-radius: 8px; text-decoration: none; font-weight: 500;">View Source Code</a>
+  </div>
+  <p style="margin-top: 32px; font-size: 12px; color: rgba(255,255,255,0.4);">WMF Customer Service AI Agent &mdash; Technical Approach Document</p>
+</div>
+
+</body>
+</html>

@@ -6,9 +6,9 @@ Hi,
 
 You need an AI agent that watches your sales@ mailbox, figures out if an email is an RFQ, an order status inquiry, a change request, or spam -- then extracts the actual quote-worthy details (customer, parts, quantities, finish specs like AAMA 2604/2605, colors, dimensions) and drafts a quote using your existing Excel template. All with a human approving every outbound message. I've already started building it.
 
-**Here's a working prototype:** [Live Dashboard](https://wmf-agent-dashboard.vercel.app) | [Source Code](https://github.com/HumamAl/wmf-agent-dashboard)
+**Here's a working prototype:** [Live Dashboard](https://wmf-agent-dashboard.vercel.app) | [Source Code](https://github.com/HumamAl/wmf-agent-dashboard) | [Full Technical Approach](https://wmf-agent-dashboard.vercel.app/approach.html)
 
-The demo shows AI-powered email classification and structured RFQ extraction with confidence scoring -- the two hardest parts of your pipeline. It's built on the same stack I'd use for your production system.
+The demo shows AI-powered email classification and structured RFQ extraction with confidence scoring -- the two hardest parts of your pipeline. It's built on the same stack I'd use for your production system. The technical approach document covers the full architecture, workflow details, guardrails, and delivery plan.
 
 ## Technical Approach
 
